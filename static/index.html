@@ -334,6 +334,34 @@
     }
     #configWarning strong { display: block; margin-bottom: 4px; }
 
+    /* ── Section tabs ── */
+    .section-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 24px; }
+    .section-tab {
+      padding: 5px 14px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface);
+      font-size: .82rem;
+      font-weight: 500;
+      cursor: pointer;
+      color: var(--muted);
+      transition: all .15s;
+    }
+    .section-tab:hover { border-color: var(--accent); color: var(--accent); }
+    .section-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .book-section {
+      font-size: .65rem;
+      color: var(--accent);
+      background: var(--accent-light);
+      padding: 1px 5px;
+      border-radius: 3px;
+      margin-top: 4px;
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     @media (max-width: 600px) {
       main { padding: 20px 16px; }
       #bookGrid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
@@ -382,6 +410,13 @@
     </div>
   </section>
 
+  <!-- Section tabs -->
+  <div id="sectionsBar" style="display:none">
+    <div class="section-tabs" id="sectionTabs">
+      <button class="section-tab active" data-section="" onclick="setSection(this, '')">All</button>
+    </div>
+  </div>
+
   <!-- Library -->
   <section>
     <div class="library-header">
@@ -409,6 +444,7 @@
 <script>
   const API = '';
   let searchTimer;
+  let currentSection = '';
 
   // ── Health check ──────────────────────────────────────────────────────────
   async function checkHealth() {
@@ -475,9 +511,39 @@
     document.getElementById('scanStatus').textContent = label;
   }
 
+  // ── Sections ──────────────────────────────────────────────────────────────
+  async function loadSections() {
+    try {
+      const res = await fetch(`${API}/api/sections`);
+      const data = await res.json();
+      if (!data.sections.length) return;
+      const bar = document.getElementById('sectionsBar');
+      const tabs = document.getElementById('sectionTabs');
+      data.sections.forEach(s => {
+        const btn = document.createElement('button');
+        btn.className = 'section-tab';
+        btn.dataset.section = s;
+        btn.textContent = s;
+        btn.onclick = () => setSection(btn, s);
+        tabs.appendChild(btn);
+      });
+      bar.style.display = '';
+    } catch {}
+  }
+
+  function setSection(btn, section) {
+    currentSection = section;
+    document.querySelectorAll('.section-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadBooks(document.getElementById('searchInput').value);
+  }
+
   // ── Library ───────────────────────────────────────────────────────────────
   async function loadBooks(q = '') {
-    const url = q ? `${API}/api/books?q=${encodeURIComponent(q)}` : `${API}/api/books`;
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (currentSection) params.set('section', currentSection);
+    const url = `${API}/api/books${params.toString() ? '?' + params : ''}`;
     const res = await fetch(url);
     const data = await res.json();
     renderBooks(data.books, data.total);
@@ -513,6 +579,7 @@
             ${book.publish_year ? `<span class="book-year">${book.publish_year}</span>` : '<span></span>'}
             ${book.isbn ? `<span class="book-isbn">ISBN</span>` : ''}
           </div>
+          ${book.section ? `<span class="book-section">${escHtml(book.section)}</span>` : ''}
         </div>
         <button class="delete-btn" onclick="deleteBook(${book.id})" title="Remove">✕</button>
       </div>
@@ -563,6 +630,7 @@
 
   // ── Init ──────────────────────────────────────────────────────────────────
   checkHealth();
+  loadSections();
   loadBooks();
 </script>
 </body>

@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS books (
     publisher       TEXT,
     publish_year    INTEGER,
     open_library_key TEXT,
+    section         TEXT,
     source_image    TEXT,
     added_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
@@ -74,7 +75,18 @@ def init_db() -> None:
     conn.close()
 
 
+def migrate_db() -> None:
+    conn = get_db()
+    try:
+        conn.execute("ALTER TABLE books ADD COLUMN section TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
+    conn.close()
+
+
 init_db()
+migrate_db()
 
 # ---------------------------------------------------------------------------
 # Vision: extract book list from image
@@ -256,8 +268,8 @@ async def scan_image(file: UploadFile = File(...)):
         meta = await lookup_metadata(title, author)
         cursor = conn.execute(
             """INSERT INTO books
-               (title, author, isbn, cover_url, description, publisher, publish_year, open_library_key, source_image)
-               VALUES (:title, :author, :isbn, :cover_url, :description, :publisher, :publish_year, :open_library_key, :source_image)""",
+               (title, author, isbn, cover_url, description, publisher, publish_year, open_library_key, section, source_image)
+               VALUES (:title, :author, :isbn, :cover_url, :description, :publisher, :publish_year, :open_library_key, :section, :source_image)""",
             {
                 "title": meta["title"],
                 "author": meta.get("author"),
@@ -267,6 +279,7 @@ async def scan_image(file: UploadFile = File(...)):
                 "publisher": meta.get("publisher"),
                 "publish_year": meta.get("publish_year"),
                 "open_library_key": meta.get("open_library_key"),
+                "section": None,
                 "source_image": filename,
             },
         )
@@ -280,23 +293,68 @@ async def scan_image(file: UploadFile = File(...)):
     return {"books_added": len(added), "detected": len(detected), "books": added}
 
 
-@app.get("/api/books")
-async def list_books(q: Optional[str] = None, limit: int = 200, offset: int = 0):
+@app.get("/api/sections")
+async def list_sections():
     conn = get_db()
+    rows = conn.execute(
+        "SELECT DISTINCT section FROM books WHERE section IS NOT NULL AND section != '' ORDER BY section"
+    ).fetchall()
+    conn.close()
+    return {"sections": [r[0] for r in rows]}
+
+
+@app.post("/api/books")
+async def add_book(data: dict):
+    title = (data.get("title") or "").strip()
+    if not title:
+        raise HTTPException(400, "title required")
+    author = (data.get("author") or "").strip() or None
+    isbn = (data.get("isbn") or "").strip() or None
+    section = (data.get("section") or "").strip() or None
+
+    meta = await lookup_metadata(title, author)
+    conn = get_db()
+    cursor = conn.execute(
+        """INSERT INTO books
+           (title, author, isbn, cover_url, description, publisher, publish_year, open_library_key, section)
+           VALUES (:title, :author, :isbn, :cover_url, :description, :publisher, :publish_year, :open_library_key, :section)""",
+        {
+            "title": meta.get("title") or title,
+            "author": meta.get("author") or author,
+            "isbn": meta.get("isbn") or isbn,
+            "cover_url": meta.get("cover_url"),
+            "description": meta.get("description"),
+            "publisher": meta.get("publisher"),
+            "publish_year": meta.get("publish_year"),
+            "open_library_key": meta.get("open_library_key"),
+            "section": section,
+        },
+    )
+    conn.commit()
+    row = dict(meta)
+    row["id"] = cursor.lastrowid
+    row["section"] = section
+    conn.close()
+    return row
+
+
+@app.get("/api/books")
+async def list_books(q: Optional[str] = None, section: Optional[str] = None, limit: int = 200, offset: int = 0):
+    conn = get_db()
+    filters, params = [], []
     if q:
+        filters.append("(title LIKE ? OR author LIKE ?)")
         like = f"%{q}%"
-        rows = conn.execute(
-            "SELECT * FROM books WHERE title LIKE ? OR author LIKE ? ORDER BY added_at DESC LIMIT ? OFFSET ?",
-            (like, like, limit, offset),
-        ).fetchall()
-        total = conn.execute(
-            "SELECT COUNT(*) FROM books WHERE title LIKE ? OR author LIKE ?", (like, like)
-        ).fetchone()[0]
-    else:
-        rows = conn.execute(
-            "SELECT * FROM books ORDER BY added_at DESC LIMIT ? OFFSET ?", (limit, offset)
-        ).fetchall()
-        total = conn.execute("SELECT COUNT(*) FROM books").fetchone()[0]
+        params += [like, like]
+    if section:
+        filters.append("section = ?")
+        params.append(section)
+    where = ("WHERE " + " AND ".join(filters)) if filters else ""
+    rows = conn.execute(
+        f"SELECT * FROM books {where} ORDER BY added_at DESC LIMIT ? OFFSET ?",
+        params + [limit, offset],
+    ).fetchall()
+    total = conn.execute(f"SELECT COUNT(*) FROM books {where}", params).fetchone()[0]
     conn.close()
     return {"total": total, "books": [dict(r) for r in rows]}
 
