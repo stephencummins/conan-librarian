@@ -24,6 +24,8 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llava")
 USE_OLLAMA = os.getenv("USE_OLLAMA", "false").lower() == "true"
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -133,12 +135,37 @@ async def _extract_via_ollama(image_bytes: bytes) -> list[dict]:
         return _parse_book_list(resp.json().get("response", ""))
 
 
+async def _extract_via_claude(image_bytes: bytes, content_type: str) -> list[dict]:
+    import anthropic
+    b64 = base64.b64encode(image_bytes).decode()
+    client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+    response = await client.messages.create(
+        model=CLAUDE_MODEL,
+        max_tokens=1500,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": content_type, "data": b64},
+                    },
+                    {"type": "text", "text": VISION_PROMPT},
+                ],
+            }
+        ],
+    )
+    return _parse_book_list(response.content[0].text)
+
+
 async def extract_books(image_bytes: bytes, content_type: str) -> list[dict]:
     if USE_OLLAMA:
         return await _extract_via_ollama(image_bytes)
+    if ANTHROPIC_API_KEY:
+        return await _extract_via_claude(image_bytes, content_type)
     if OPENAI_API_KEY:
         return await _extract_via_openai(image_bytes, content_type)
-    raise ValueError("No vision backend configured. Set OPENAI_API_KEY or USE_OLLAMA=true in .env")
+    raise ValueError("No vision backend configured. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or USE_OLLAMA=true in .env")
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +215,7 @@ async def lookup_metadata(title: str, author: Optional[str]) -> dict:
 # ---------------------------------------------------------------------------
 @app.get("/api/health")
 async def health():
-    backend = "ollama" if USE_OLLAMA else ("openai" if OPENAI_API_KEY else "none")
+    backend = "ollama" if USE_OLLAMA else ("claude" if ANTHROPIC_API_KEY else ("openai" if OPENAI_API_KEY else "none"))
     conn = get_db()
     total = conn.execute("SELECT COUNT(*) FROM books").fetchone()[0]
     conn.close()
