@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ShelfScan</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f8f7f4;
+      --surface: #ffffff;
+      --border: #e2ded8;
+      --accent: #4f46e5;
+      --accent-hover: #4338ca;
+      --accent-light: #eef2ff;
+      --text: #1c1917;
+      --muted: #78716c;
+      --danger: #dc2626;
+      --danger-light: #fef2f2;
+      --success: #16a34a;
+      --success-light: #f0fdf4;
+      --radius: 10px;
+      --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+      --shadow-md: 0 4px 6px -1px rgba(0,0,0,.08), 0 2px 4px -2px rgba(0,0,0,.06);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 60px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .logo svg { color: var(--accent); }
+    .header-actions { display: flex; gap: 8px; align-items: center; }
+    #statusBadge {
+      font-size: .75rem;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--accent-light);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    /* ── Main layout ── */
+    main { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+
+    /* ── Upload zone ── */
+    .upload-section { margin-bottom: 40px; }
+
+    #dropZone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      position: relative;
+    }
+    #dropZone:hover, #dropZone.drag-over {
+      border-color: var(--accent);
+      background: var(--accent-light);
+    }
+    #dropZone .upload-icon {
+      width: 52px; height: 52px;
+      margin: 0 auto 16px;
+      color: var(--accent);
+    }
+    #dropZone p { color: var(--muted); margin-top: 6px; font-size: .9rem; }
+    #dropZone .upload-label {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .btn-browse {
+      display: inline-block;
+      margin-top: 16px;
+      padding: 9px 20px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 7px;
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-browse:hover { background: var(--accent-hover); }
+    #fileInput { display: none; }
+
+    /* ── Scanning overlay ── */
+    #scanOverlay {
+      display: none;
+      border: 2px solid var(--accent);
+      border-radius: var(--radius);
+      background: var(--accent-light);
+      padding: 48px 24px;
+      text-align: center;
+    }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #scanStatus { font-weight: 600; color: var(--accent); }
+    #scanSub { color: var(--muted); font-size: .875rem; margin-top: 4px; }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 12px 18px;
+      border-radius: 8px;
+      font-size: .9rem;
+      font-weight: 500;
+      box-shadow: var(--shadow-md);
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity .25s, transform .25s;
+      pointer-events: none;
+      z-index: 100;
+      max-width: 320px;
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+    #toast.success { background: var(--success-light); color: var(--success); border: 1px solid #bbf7d0; }
+    #toast.error   { background: var(--danger-light);  color: var(--danger);  border: 1px solid #fecaca; }
+    #toast.info    { background: var(--accent-light);  color: var(--accent);  border: 1px solid #c7d2fe; }
+
+    /* ── Library section ── */
+    .library-header {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .library-header h2 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      flex: 1 1 auto;
+    }
+    #bookCount {
+      background: var(--accent);
+      color: #fff;
+      font-size: .75rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 999px;
+      vertical-align: middle;
+      margin-left: 6px;
+    }
+
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; }
+    #searchInput {
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      font-size: .9rem;
+      width: 220px;
+      background: var(--surface);
+      color: var(--text);
+      outline: none;
+      transition: border-color .15s;
+    }
+    #searchInput:focus { border-color: var(--accent); }
+
+    .btn-outline {
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--surface);
+      font-size: .875rem;
+      font-weight: 500;
+      cursor: pointer;
+      color: var(--text);
+      transition: border-color .15s, background .15s;
+    }
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+
+    /* ── Book grid ── */
+    #bookGrid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 16px;
+    }
+
+    .book-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      transition: box-shadow .2s, transform .2s;
+      position: relative;
+    }
+    .book-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+
+    .book-cover {
+      width: 100%;
+      aspect-ratio: 2/3;
+      background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .book-cover img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .book-cover .no-cover {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      color: var(--accent);
+      opacity: .5;
+      padding: 12px;
+      text-align: center;
+    }
+    .book-cover .no-cover svg { width: 32px; height: 32px; }
+    .book-cover .no-cover span { font-size: .7rem; font-weight: 600; word-break: break-word; }
+
+    .book-info {
+      padding: 10px 10px 12px;
+    }
+    .book-title {
+      font-size: .82rem;
+      font-weight: 700;
+      line-height: 1.3;
+      margin-bottom: 3px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .book-author {
+      font-size: .75rem;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .book-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 8px;
+    }
+    .book-year {
+      font-size: .7rem;
+      color: var(--muted);
+      background: var(--bg);
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    .book-isbn {
+      font-size: .65rem;
+      color: var(--muted);
+      opacity: .7;
+    }
+    .delete-btn {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 24px; height: 24px;
+      background: rgba(255,255,255,.9);
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity .15s, background .15s;
+      font-size: .85rem;
+      color: var(--danger);
+      line-height: 1;
+    }
+    .book-card:hover .delete-btn { opacity: 1; }
+    .delete-btn:hover { background: var(--danger-light); border-color: var(--danger); }
+
+    /* ── Empty state ── */
+    #emptyState {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+    }
+    #emptyState svg { width: 56px; height: 56px; margin: 0 auto 16px; opacity: .3; }
+    #emptyState p { font-size: 1rem; font-weight: 500; }
+    #emptyState small { font-size: .85rem; }
+
+    /* ── Config warning ── */
+    #configWarning {
+      display: none;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      margin-bottom: 24px;
+      font-size: .875rem;
+      color: #92400e;
+    }
+    #configWarning strong { display: block; margin-bottom: 4px; }
+
+    @media (max-width: 600px) {
+      main { padding: 20px 16px; }
+      #bookGrid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+      .controls { width: 100%; }
+      #searchInput { flex: 1; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+    </svg>
+    ShelfScan
+  </div>
+  <div class="header-actions">
+    <span id="statusBadge">Loading…</span>
+  </div>
+</header>
+
+<main>
+  <div id="configWarning">
+    <strong>⚠️ No vision backend configured</strong>
+    Set <code>OPENAI_API_KEY</code> or <code>USE_OLLAMA=true</code> in your <code>.env</code> file and restart the server.
+  </div>
+
+  <!-- Upload zone -->
+  <section class="upload-section">
+    <div id="dropZone">
+      <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/>
+        <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+      </svg>
+      <p class="upload-label">Drop a bookshelf photo here</p>
+      <p>Supports JPG, PNG, WEBP — single shelf or stacked books</p>
+      <button class="btn-browse" onclick="document.getElementById('fileInput').click()">Choose photo</button>
+      <input type="file" id="fileInput" accept="image/*" />
+    </div>
+
+    <div id="scanOverlay">
+      <div class="spinner"></div>
+      <p id="scanStatus">Scanning bookshelf…</p>
+      <p id="scanSub">This may take 10–30 seconds</p>
+    </div>
+  </section>
+
+  <!-- Library -->
+  <section>
+    <div class="library-header">
+      <h2>My Library <span id="bookCount">0</span></h2>
+      <div class="controls">
+        <input type="search" id="searchInput" placeholder="Search title or author…" />
+        <button class="btn-outline" onclick="exportFile('csv')">Export CSV</button>
+        <button class="btn-outline" onclick="exportFile('json')">Export JSON</button>
+      </div>
+    </div>
+    <div id="bookGrid">
+      <div id="emptyState">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+        </svg>
+        <p>Your library is empty</p>
+        <small>Upload a bookshelf photo to get started</small>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+  const API = '';
+  let searchTimer;
+
+  // ── Health check ──────────────────────────────────────────────────────────
+  async function checkHealth() {
+    try {
+      const res = await fetch(`${API}/api/health`);
+      const data = await res.json();
+      const badge = document.getElementById('statusBadge');
+      if (data.vision_backend === 'none') {
+        badge.textContent = '⚠ No vision backend';
+        badge.style.background = '#fef9c3';
+        badge.style.color = '#854d0e';
+        document.getElementById('configWarning').style.display = 'block';
+      } else {
+        badge.textContent = data.vision_backend === 'ollama' ? '🦙 Ollama' : '✦ OpenAI';
+      }
+    } catch {
+      document.getElementById('statusBadge').textContent = '⚠ Offline';
+    }
+  }
+
+  // ── Drag & drop ───────────────────────────────────────────────────────────
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) uploadFile(file);
+    else showToast('Please drop an image file', 'error');
+  });
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) uploadFile(fileInput.files[0]);
+    fileInput.value = '';
+  });
+
+  // ── Upload & scan ─────────────────────────────────────────────────────────
+  async function uploadFile(file) {
+    showScanning(true, `Analysing "${file.name}"…`);
+    const form = new FormData();
+    form.append('file', file);
+    try {
+      const res = await fetch(`${API}/api/scan`, { method: 'POST', body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Scan failed');
+      if (data.books_added === 0) {
+        showToast(`No books detected in this image. Try a clearer photo.`, 'info');
+      } else {
+        showToast(`✓ Added ${data.books_added} book${data.books_added !== 1 ? 's' : ''} (${data.detected} detected)`, 'success');
+      }
+      loadBooks();
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      showScanning(false);
+    }
+  }
+
+  function showScanning(on, label = 'Scanning bookshelf…') {
+    dropZone.style.display = on ? 'none' : '';
+    document.getElementById('scanOverlay').style.display = on ? '' : 'none';
+    document.getElementById('scanStatus').textContent = label;
+  }
+
+  // ── Library ───────────────────────────────────────────────────────────────
+  async function loadBooks(q = '') {
+    const url = q ? `${API}/api/books?q=${encodeURIComponent(q)}` : `${API}/api/books`;
+    const res = await fetch(url);
+    const data = await res.json();
+    renderBooks(data.books, data.total);
+  }
+
+  function renderBooks(books, total) {
+    const grid = document.getElementById('bookGrid');
+    document.getElementById('bookCount').textContent = total;
+
+    if (!books.length) {
+      grid.innerHTML = `
+        <div id="emptyState">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+          </svg>
+          <p>${total === 0 ? 'Your library is empty' : 'No results found'}</p>
+          <small>${total === 0 ? 'Upload a bookshelf photo to get started' : 'Try a different search'}</small>
+        </div>`;
+      return;
+    }
+
+    grid.innerHTML = books.map(book => `
+      <div class="book-card" data-id="${book.id}">
+        <div class="book-cover">
+          ${book.cover_url
+            ? `<img src="${book.cover_url}" alt="${escHtml(book.title)}" loading="lazy" onerror="this.parentElement.innerHTML=noCoverHTML('${escAttr(book.title)}')">`
+            : `<div class="no-cover">${bookIconSvg}<span>${escHtml(book.title)}</span></div>`}
+        </div>
+        <div class="book-info">
+          <div class="book-title" title="${escAttr(book.title)}">${escHtml(book.title)}</div>
+          <div class="book-author">${escHtml(book.author || '—')}</div>
+          <div class="book-meta">
+            ${book.publish_year ? `<span class="book-year">${book.publish_year}</span>` : '<span></span>'}
+            ${book.isbn ? `<span class="book-isbn">ISBN</span>` : ''}
+          </div>
+        </div>
+        <button class="delete-btn" onclick="deleteBook(${book.id})" title="Remove">✕</button>
+      </div>
+    `).join('');
+  }
+
+  const bookIconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`;
+
+  function noCoverHTML(title) {
+    return `<div class="no-cover">${bookIconSvg}<span>${escHtml(title)}</span></div>`;
+  }
+
+  // ── Delete ────────────────────────────────────────────────────────────────
+  async function deleteBook(id) {
+    if (!confirm('Remove this book from your library?')) return;
+    await fetch(`${API}/api/books/${id}`, { method: 'DELETE' });
+    const card = document.querySelector(`.book-card[data-id="${id}"]`);
+    if (card) { card.style.opacity = '0'; card.style.transform = 'scale(.95)'; card.style.transition = '.2s'; setTimeout(() => loadBooks(document.getElementById('searchInput').value), 200); }
+  }
+
+  // ── Search ────────────────────────────────────────────────────────────────
+  document.getElementById('searchInput').addEventListener('input', e => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => loadBooks(e.target.value), 300);
+  });
+
+  // ── Export ────────────────────────────────────────────────────────────────
+  function exportFile(format) {
+    window.location.href = `${API}/api/export/${format}`;
+  }
+
+  // ── Toast ─────────────────────────────────────────────────────────────────
+  let toastTimer;
+  function showToast(msg, type = 'info') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = `show ${type}`;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.className = '', 4000);
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function escHtml(s) {
+    if (!s) return '';
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function escAttr(s) { return escHtml(s); }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  checkHealth();
+  loadBooks();
+</script>
+</body>
+</html>
