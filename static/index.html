@@ -363,6 +363,66 @@
       text-overflow: ellipsis;
     }
 
+    /* ── Wishlist cards ── */
+    .book-card.wishlist {
+      border: 2px dashed #d4ccc6;
+      background: #f5f4f0;
+    }
+    .book-card.wishlist .book-cover img {
+      filter: grayscale(25%) opacity(0.88);
+    }
+    .wishlist-actions { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+    .btn-own-it {
+      padding: 5px 8px;
+      background: var(--success);
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      font-size: .75rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      transition: background .15s;
+    }
+    .btn-own-it:hover { background: #15803d; }
+    .btn-wob {
+      padding: 5px 8px;
+      background: var(--surface);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      font-size: .75rem;
+      font-weight: 500;
+      text-align: center;
+      text-decoration: none;
+      display: block;
+      transition: border-color .15s, color .15s;
+    }
+    .btn-wob:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Owned filter ── */
+    .owned-tabs {
+      display: flex;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      overflow: hidden;
+      background: var(--surface);
+    }
+    .owned-tab {
+      padding: 7px 12px;
+      background: none;
+      border: none;
+      border-right: 1px solid var(--border);
+      font-size: .82rem;
+      font-weight: 500;
+      cursor: pointer;
+      color: var(--muted);
+      transition: background .15s, color .15s;
+    }
+    .owned-tab:last-child { border-right: none; }
+    .owned-tab:hover { background: var(--accent-light); color: var(--accent); }
+    .owned-tab.active { background: var(--accent); color: #fff; }
+
     @media (max-width: 600px) {
       main { padding: 20px 16px; }
       #bookGrid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
@@ -422,6 +482,11 @@
       <h2>My Library <span id="bookCount">0</span></h2>
       <div class="controls">
         <input type="search" id="searchInput" placeholder="Search title or author…" />
+        <div class="owned-tabs">
+          <button class="owned-tab active" onclick="setOwned(this, null)">All</button>
+          <button class="owned-tab" onclick="setOwned(this, 1)">Owned</button>
+          <button class="owned-tab" onclick="setOwned(this, 0)">Wishlist</button>
+        </div>
         <button class="btn-outline" onclick="exportFile('csv')">Export CSV</button>
         <button class="btn-outline" onclick="exportFile('json')">Export JSON</button>
       </div>
@@ -444,6 +509,7 @@
   const API = '';
   let searchTimer;
   let currentSection = '';
+  let currentOwned = null;
 
   // ── Health check ──────────────────────────────────────────────────────────
   async function checkHealth() {
@@ -457,7 +523,8 @@
         badge.style.color = '#854d0e';
         document.getElementById('configWarning').style.display = 'block';
       } else {
-        badge.textContent = data.vision_backend === 'ollama' ? '🦙 Ollama' : '✦ OpenAI';
+        const labels = { claude: '✦ Claude', openai: '✦ OpenAI', ollama: '🦙 Ollama' };
+        badge.textContent = labels[data.vision_backend] || data.vision_backend;
       }
     } catch {
       document.getElementById('statusBadge').textContent = '⚠ Offline';
@@ -537,11 +604,29 @@
     loadBooks(document.getElementById('searchInput').value);
   }
 
+  function setOwned(btn, owned) {
+    currentOwned = owned;
+    document.querySelectorAll('.owned-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadBooks(document.getElementById('searchInput').value);
+  }
+
+  async function toggleOwned(id) {
+    await fetch(`${API}/api/books/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ owned: 1 }),
+    });
+    showToast('✓ Added to your library!', 'success');
+    loadBooks(document.getElementById('searchInput').value);
+  }
+
   // ── Library ───────────────────────────────────────────────────────────────
   async function loadBooks(q = '') {
     const params = new URLSearchParams();
     if (q) params.set('q', q);
     if (currentSection) params.set('section', currentSection);
+    if (currentOwned !== null) params.set('owned', currentOwned);
     const url = `${API}/api/books${params.toString() ? '?' + params : ''}`;
     const res = await fetch(url);
     const data = await res.json();
@@ -564,25 +649,34 @@
       return;
     }
 
-    grid.innerHTML = books.map(book => `
-      <div class="book-card" data-id="${book.id}">
-        <div class="book-cover">
-          ${book.cover_url
-            ? `<img src="${book.cover_url}" alt="${escHtml(book.title)}" loading="lazy" onerror="this.parentElement.innerHTML=noCoverHTML('${escAttr(book.title)}')">`
-            : `<div class="no-cover">${bookIconSvg}<span>${escHtml(book.title)}</span></div>`}
-        </div>
-        <div class="book-info">
-          <div class="book-title" title="${escAttr(book.title)}">${escHtml(book.title)}</div>
-          <div class="book-author">${escHtml(book.author || '—')}</div>
-          <div class="book-meta">
-            ${book.publish_year ? `<span class="book-year">${book.publish_year}</span>` : '<span></span>'}
-            ${book.isbn ? `<span class="book-isbn">ISBN</span>` : ''}
+    grid.innerHTML = books.map(book => {
+      const isWishlist = book.owned === 0;
+      const wobQuery = encodeURIComponent((book.title || '') + (book.author ? ' ' + book.author : ''));
+      const wobUrl = `https://www.worldofbooks.com/en-gb/search?keyword=${wobQuery}`;
+      return `
+        <div class="book-card${isWishlist ? ' wishlist' : ''}" data-id="${book.id}">
+          <div class="book-cover">
+            ${book.cover_url
+              ? `<img src="${book.cover_url}" alt="${escAttr(book.title)}" loading="lazy" onerror="this.parentElement.innerHTML=noCoverHTML('${escAttr(book.title)}')">`
+              : `<div class="no-cover">${bookIconSvg}<span>${escHtml(book.title)}</span></div>`}
           </div>
-          ${book.section ? `<span class="book-section">${escHtml(book.section)}</span>` : ''}
-        </div>
-        <button class="delete-btn" onclick="deleteBook(${book.id})" title="Remove">✕</button>
-      </div>
-    `).join('');
+          <div class="book-info">
+            <div class="book-title" title="${escAttr(book.title)}">${escHtml(book.title)}</div>
+            <div class="book-author">${escHtml(book.author || '—')}</div>
+            <div class="book-meta">
+              ${book.publish_year ? `<span class="book-year">${book.publish_year}</span>` : '<span></span>'}
+              ${book.isbn ? `<span class="book-isbn">ISBN</span>` : ''}
+            </div>
+            ${book.section ? `<span class="book-section">${escHtml(book.section)}</span>` : ''}
+            ${isWishlist ? `
+            <div class="wishlist-actions">
+              <button class="btn-own-it" onclick="toggleOwned(${book.id})">✓ I own this</button>
+              <a class="btn-wob" href="${wobUrl}" target="_blank" rel="noopener">Buy on WoB</a>
+            </div>` : ''}
+          </div>
+          <button class="delete-btn" onclick="deleteBook(${book.id})" title="Remove">✕</button>
+        </div>`;
+    }).join('');
   }
 
   const bookIconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`;

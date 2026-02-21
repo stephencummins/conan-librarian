@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS books (
     publish_year    INTEGER,
     open_library_key TEXT,
     section         TEXT,
+    owned           INTEGER NOT NULL DEFAULT 1,
     source_image    TEXT,
     added_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
@@ -77,11 +78,15 @@ def init_db() -> None:
 
 def migrate_db() -> None:
     conn = get_db()
-    try:
-        conn.execute("ALTER TABLE books ADD COLUMN section TEXT")
-        conn.commit()
-    except sqlite3.OperationalError:
-        pass  # column already exists
+    for stmt in [
+        "ALTER TABLE books ADD COLUMN section TEXT",
+        "ALTER TABLE books ADD COLUMN owned INTEGER NOT NULL DEFAULT 1",
+    ]:
+        try:
+            conn.execute(stmt)
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # column already exists
     conn.close()
 
 
@@ -311,13 +316,14 @@ async def add_book(data: dict):
     author = (data.get("author") or "").strip() or None
     isbn = (data.get("isbn") or "").strip() or None
     section = (data.get("section") or "").strip() or None
+    owned = int(data.get("owned", 1))
 
     meta = await lookup_metadata(title, author)
     conn = get_db()
     cursor = conn.execute(
         """INSERT INTO books
-           (title, author, isbn, cover_url, description, publisher, publish_year, open_library_key, section)
-           VALUES (:title, :author, :isbn, :cover_url, :description, :publisher, :publish_year, :open_library_key, :section)""",
+           (title, author, isbn, cover_url, description, publisher, publish_year, open_library_key, section, owned)
+           VALUES (:title, :author, :isbn, :cover_url, :description, :publisher, :publish_year, :open_library_key, :section, :owned)""",
         {
             "title": meta.get("title") or title,
             "author": meta.get("author") or author,
@@ -328,18 +334,20 @@ async def add_book(data: dict):
             "publish_year": meta.get("publish_year"),
             "open_library_key": meta.get("open_library_key"),
             "section": section,
+            "owned": owned,
         },
     )
     conn.commit()
     row = dict(meta)
     row["id"] = cursor.lastrowid
     row["section"] = section
+    row["owned"] = owned
     conn.close()
     return row
 
 
 @app.get("/api/books")
-async def list_books(q: Optional[str] = None, section: Optional[str] = None, limit: int = 200, offset: int = 0):
+async def list_books(q: Optional[str] = None, section: Optional[str] = None, owned: Optional[int] = None, limit: int = 200, offset: int = 0):
     conn = get_db()
     filters, params = [], []
     if q:
@@ -349,6 +357,9 @@ async def list_books(q: Optional[str] = None, section: Optional[str] = None, lim
     if section:
         filters.append("section = ?")
         params.append(section)
+    if owned is not None:
+        filters.append("owned = ?")
+        params.append(owned)
     where = ("WHERE " + " AND ".join(filters)) if filters else ""
     rows = conn.execute(
         f"SELECT * FROM books {where} ORDER BY added_at DESC LIMIT ? OFFSET ?",
@@ -368,6 +379,24 @@ async def delete_book(book_id: int):
     if result.rowcount == 0:
         raise HTTPException(404, "Book not found")
     return {"ok": True}
+
+
+@app.patch("/api/books/{book_id}")
+async def patch_book(book_id: int, data: dict):
+    allowed = {"owned", "title", "author", "section", "cover_url", "isbn"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if not updates:
+        raise HTTPException(400, "No valid fields to update")
+    conn = get_db()
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [book_id]
+    result = conn.execute(f"UPDATE books SET {set_clause} WHERE id = ?", values)
+    conn.commit()
+    row = conn.execute("SELECT * FROM books WHERE id = ?", (book_id,)).fetchone()
+    conn.close()
+    if result.rowcount == 0:
+        raise HTTPException(404, "Book not found")
+    return dict(row)
 
 
 @app.get("/api/export/csv")
