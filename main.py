@@ -33,7 +33,7 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 # ---------------------------------------------------------------------------
 # FastAPI app
 # ---------------------------------------------------------------------------
-app = FastAPI(title="ShelfScan", version="1.0.0")
+app = FastAPI(title="Bookr", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
