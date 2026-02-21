@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Background -->
+  <rect width="100" height="100" rx="20" fill="#4f46e5"/>
+
+  <!-- Left page -->
+  <path d="M18 28 C18 26 20 25 22 25.5 L48 22 L48 76 L22 79.5 C20 80 18 79 18 77 Z"
+        fill="white" opacity="0.95"/>
+
+  <!-- Right page -->
+  <path d="M82 28 C82 26 80 25 78 25.5 L52 22 L52 76 L78 79.5 C80 80 82 79 82 77 Z"
+        fill="white" opacity="0.72"/>
+
+  <!-- Spine shadow -->
+  <rect x="46" y="22" width="8" height="54" rx="2" fill="#4338ca"/>
+  <!-- Spine -->
+  <rect x="47" y="22" width="6" height="54" rx="2" fill="white" opacity="0.9"/>
+
+  <!-- Text lines, left page -->
+  <line x1="24" y1="37" x2="45" y2="34" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" opacity="0.45"/>
+  <line x1="24" y1="45" x2="45" y2="42" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" opacity="0.38"/>
+  <line x1="24" y1="53" x2="45" y2="50" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" opacity="0.38"/>
+  <line x1="24" y1="61" x2="40" y2="58.5" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" opacity="0.28"/>
+
+  <!-- AI sparkle, right page -->
+  <path d="M67 37 L69.5 30 L72 37 L79 39.5 L72 42 L69.5 49 L67 42 L60 39.5 Z"
+        fill="#fbbf24" opacity="0.95"/>
+  <circle cx="63" cy="57" r="2"   fill="#fbbf24" opacity="0.55"/>
+  <circle cx="74" cy="62" r="1.5" fill="#fbbf24" opacity="0.38"/>
+</svg>
