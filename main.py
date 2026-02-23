@@ -81,6 +81,7 @@ def migrate_db() -> None:
     for stmt in [
         "ALTER TABLE books ADD COLUMN section TEXT",
         "ALTER TABLE books ADD COLUMN owned INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE books ADD COLUMN shelf_location TEXT",
     ]:
         try:
             conn.execute(stmt)
@@ -383,7 +384,7 @@ async def delete_book(book_id: int):
 
 @app.patch("/api/books/{book_id}")
 async def patch_book(book_id: int, data: dict):
-    allowed = {"owned", "title", "author", "section", "cover_url", "isbn"}
+    allowed = {"owned", "title", "author", "section", "cover_url", "isbn", "shelf_location"}
     updates = {k: v for k, v in data.items() if k in allowed}
     if not updates:
         raise HTTPException(400, "No valid fields to update")
@@ -407,7 +408,7 @@ async def export_csv():
 
     output = io.StringIO()
     fields = ["id", "title", "author", "isbn", "publisher", "publish_year",
-              "description", "cover_url", "open_library_key", "source_image", "added_at"]
+              "description", "cover_url", "open_library_key", "shelf_location", "source_image", "added_at"]
     writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
     writer.writeheader()
     writer.writerows(rows)
